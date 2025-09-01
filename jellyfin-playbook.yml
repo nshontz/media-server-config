@@ -1,0 +1,242 @@
+---
+- name: Install and Configure Jellyfin Media Server
+  hosts: jellyfin_servers
+  become: yes
+  vars:
+    jellyfin_plugins:
+      - name: "Session Cleaner"
+        repo_url: "https://github.com/jellyfin/jellyfin-plugin-sessioncleaner/releases/latest/download/Jellyfin.Plugin.SessionCleaner.dll"
+      - name: "SkinManager"
+        repo_url: "https://github.com/danieladov/jellyfin-plugin-skin-manager/releases/latest/download/SkinManager.dll"
+      - name: "Playback Reporting"
+        repo_url: "https://github.com/jellyfin/jellyfin-plugin-playbackreporting/releases/latest/download/Jellyfin.Plugin.PlaybackReporting.dll"
+      - name: "Subtitle Extract"
+        repo_url: "https://github.com/jellyfin/jellyfin-plugin-subtitleextract/releases/latest/download/Jellyfin.Plugin.SubtitleExtract.dll"
+      - name: "Intro Skipper"
+        repo_url: "https://github.com/ConfusedPolarBear/intro-skipper/releases/latest/download/Jellyfin.Plugin.IntroSkipper.dll"
+    
+    # Jellystat configuration
+    jellystat_postgres_password: "{{ vault_postgres_password | default('changeme123') }}"
+    jellystat_jwt_secret: "{{ vault_jwt_secret | default('changeme-jwt-secret-64-chars-long-for-security-purposes') }}"
+
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install prerequisites
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - wget
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+
+    - name: Create keyrings directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Add Jellyfin GPG key
+      get_url:
+        url: https://repo.jellyfin.org/jellyfin_team.gpg.key
+        dest: /etc/apt/keyrings/jellyfin_team.gpg.key
+        mode: '0644'
+
+    - name: Add Jellyfin repository
+      apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/jellyfin_team.gpg.key arch={{ ansible_architecture }}] https://repo.jellyfin.org/ubuntu {{ ansible_distribution_release }} main"
+        filename: jellyfin
+        state: present
+
+    - name: Update apt cache after adding repository
+      apt:
+        update_cache: yes
+
+    - name: Install Jellyfin
+      apt:
+        name: jellyfin
+        state: present
+
+    - name: Enable Jellyfin service
+      systemd:
+        name: jellyfin
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Start Jellyfin service
+      systemd:
+        name: jellyfin
+        state: started
+
+    - name: Wait for Jellyfin to start
+      wait_for:
+        port: 8096
+        host: localhost
+        timeout: 120
+
+    - name: Create Jellyfin configuration directory
+      file:
+        path: /etc/jellyfin
+        state: directory
+        owner: jellyfin
+        group: jellyfin
+        mode: '0755'
+
+    - name: Configure encoding settings for Apple TV compatibility
+      copy:
+        content: |
+          {
+            "EncodingOptions": {
+              "HardwareAccelerationType": "vaapi",
+              "EnableHardwareEncoding": true,
+              "EnableHardwareDecoding": true,
+              "EnableDecodingColorDepth10Hevc": true,
+              "EnableDecodingColorDepth10Vp9": true,
+              "PreferSystemNativeHwDecoder": true,
+              "EnableIntelLowPowerH264HwEncoder": true,
+              "EnableIntelLowPowerHevcHwEncoder": true,
+              "H264Crf": 23,
+              "H265Crf": 28,
+              "DeinterlaceDoubleRate": false,
+              "DeinterlaceMethod": "yadif",
+              "EnableTonemapping": true,
+              "TonemappingAlgorithm": "hable",
+              "TonemappingMode": "auto",
+              "TonemappingRange": "auto",
+              "VppTonemappingAlgorithm": "bt2390",
+              "H264PreferredFormat": "baseline",
+              "TranscodingThreadCount": 0
+            }
+          }
+        dest: /etc/jellyfin/encoding.xml
+        owner: jellyfin
+        group: jellyfin
+        mode: '0644'
+      notify: restart jellyfin
+
+    - name: Create plugins directory
+      file:
+        path: /var/lib/jellyfin/plugins
+        state: directory
+        owner: jellyfin
+        group: jellyfin
+        mode: '0755'
+
+    - name: Download and install Jellyfin plugins
+      get_url:
+        url: "{{ item.repo_url }}"
+        dest: "/var/lib/jellyfin/plugins/{{ item.name }}.dll"
+        owner: jellyfin
+        group: jellyfin
+        mode: '0644'
+      loop: "{{ jellyfin_plugins }}"
+      notify: restart jellyfin
+
+    - name: Set up firewall rule for Jellyfin
+      ufw:
+        rule: allow
+        port: '8096'
+        proto: tcp
+
+    # Install Docker for Jellystat
+    - name: Install Docker prerequisites
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+
+    - name: Add Docker GPG key
+      get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.gpg
+        mode: '0644'
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch={{ ansible_architecture }} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        filename: docker
+        state: present
+
+    - name: Install Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+
+    - name: Start and enable Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Create jellystat directory
+      file:
+        path: /opt/jellystat
+        state: directory
+        mode: '0755'
+
+    - name: Create Jellystat docker-compose.yml
+      template:
+        content: |
+          version: '3.8'
+          services:
+            jellystat-db:
+              image: postgres:15.2
+              container_name: jellystat-db
+              environment:
+                POSTGRES_DB: 'jfstat'
+                POSTGRES_USER: 'postgres'
+                POSTGRES_PASSWORD: '{{ jellystat_postgres_password }}'
+              volumes:
+                - ./postgres-data:/var/lib/postgresql/data
+              restart: unless-stopped
+            
+            jellystat:
+              image: cyfershepard/jellystat:latest
+              container_name: jellystat
+              environment:
+                POSTGRES_USER: 'postgres'
+                POSTGRES_PASSWORD: '{{ jellystat_postgres_password }}'
+                POSTGRES_IP: 'jellystat-db'
+                POSTGRES_PORT: '5432'
+                JWT_SECRET: '{{ jellystat_jwt_secret }}'
+              ports:
+                - "3000:3000"
+              volumes:
+                - ./backup-data:/app/backend/backup-data
+              depends_on:
+                - jellystat-db
+              restart: unless-stopped
+        dest: /opt/jellystat/docker-compose.yml
+        mode: '0644'
+
+    - name: Start Jellystat containers
+      community.docker.docker_compose_v2:
+        project_src: /opt/jellystat
+        state: present
+
+    - name: Set up firewall rule for Jellystat
+      ufw:
+        rule: allow
+        port: '3000'
+        proto: tcp
+
+  handlers:
+    - name: restart jellyfin
+      systemd:
+        name: jellyfin
+        state: restarted
