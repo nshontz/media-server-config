@@ -45,7 +45,6 @@
           - snapd
           - avahi-daemon
           - exfat-fuse
-          - exfat-utils
         state: present
 
     - name: Create keyrings directory
