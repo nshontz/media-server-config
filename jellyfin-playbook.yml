@@ -16,8 +16,8 @@
         repo_url: "https://github.com/ConfusedPolarBear/intro-skipper/releases/latest/download/Jellyfin.Plugin.IntroSkipper.dll"
     
     # Jellystat configuration
-    jellystat_postgres_password: "{{ vault_postgres_password | default('changeme123') }}"
-    jellystat_jwt_secret: "{{ vault_jwt_secret | default('changeme-jwt-secret-64-chars-long-for-security-purposes') }}"
+#    jellystat_postgres_password: "{{ vault_postgres_password | default('changeme123') }}"
+#    jellystat_jwt_secret: "{{ vault_jwt_secret | default('changeme-jwt-secret-64-chars-long-for-security-purposes') }}"
 
   tasks:
     - name: Update apt cache
@@ -33,6 +33,12 @@
           - curl
           - gnupg
           - lsb-release
+          - openssh-server
+          - vim
+          - ufw
+          - samba
+          - snapd
+          - avahi-daemon
         state: present
 
     - name: Create keyrings directory
@@ -49,7 +55,7 @@
 
     - name: Add Jellyfin repository
       apt_repository:
-        repo: "deb [signed-by=/etc/apt/keyrings/jellyfin_team.gpg.key arch={{ ansible_architecture }}] https://repo.jellyfin.org/ubuntu {{ ansible_distribution_release }} main"
+        repo: "deb [signed-by=/etc/apt/keyrings/jellyfin_team.gpg.key] https://repo.jellyfin.org/ubuntu {{ ansible_distribution_release }} main"
         filename: jellyfin
         state: present
 
@@ -119,124 +125,114 @@
         mode: '0644'
       notify: restart jellyfin
 
-    - name: Create plugins directory
-      file:
-        path: /var/lib/jellyfin/plugins
-        state: directory
-        owner: jellyfin
-        group: jellyfin
-        mode: '0755'
-
-    - name: Download and install Jellyfin plugins
-      get_url:
-        url: "{{ item.repo_url }}"
-        dest: "/var/lib/jellyfin/plugins/{{ item.name }}.dll"
-        owner: jellyfin
-        group: jellyfin
-        mode: '0644'
-      loop: "{{ jellyfin_plugins }}"
-      notify: restart jellyfin
-
-    - name: Set up firewall rule for Jellyfin
+    - name: Configure firewall for Jellyfin
       ufw:
         rule: allow
-        port: '8096'
-        proto: tcp
+        port: "{{ item.port }}"
+        proto: "{{ item.proto }}"
+      loop:
+        - { port: "22", proto: "tcp" }
+        - { port: "8096", proto: "tcp" }
+        - { port: "8920", proto: "tcp" }
+        - { port: "1900", proto: "udp" }
+        - { port: "7359", proto: "udp" }
 
-    # Install Docker for Jellystat
-    - name: Install Docker prerequisites
-      apt:
-        name:
-          - apt-transport-https
-          - ca-certificates
-          - curl
-          - gnupg
-          - lsb-release
-        state: present
+    - name: Allow Samba through firewall
+      ufw:
+        rule: allow
+        name: Samba
 
-    - name: Add Docker GPG key
-      get_url:
-        url: https://download.docker.com/linux/ubuntu/gpg
-        dest: /etc/apt/keyrings/docker.gpg
-        mode: '0644'
+    - name: Enable firewall
+      ufw:
+        state: enabled
 
-    - name: Add Docker repository
-      apt_repository:
-        repo: "deb [arch={{ ansible_architecture }} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
-        filename: docker
-        state: present
+    - name: Create shared media directory
+      file:
+        path: /srv/media
+        state: directory
+        mode: '0755'
+        owner: nobody
+        group: nogroup
 
-    - name: Install Docker
-      apt:
-        name:
-          - docker-ce
-          - docker-ce-cli
-          - containerd.io
-          - docker-buildx-plugin
-          - docker-compose-plugin
-        state: present
-        update_cache: yes
+    - name: Configure Samba global settings for Mac compatibility
+      blockinfile:
+        path: /etc/samba/smb.conf
+        insertafter: "\\[global\\]"
+        block: |
+          # Mac compatibility settings
+          vfs objects = catia fruit streams_xattr
+          fruit:metadata = stream
+          fruit:model = MacSamba
+          fruit:posix_rename = yes
+          fruit:veto_appledouble = no
+          fruit:wipe_intentionally_left_blank_rfork = yes
+          fruit:delete_empty_adfiles = yes
+          fruit:advertise_fullsync = true
+          
+          # Network discovery
+          netbios name = JELLYFIN-SERVER
+          server string = Jellyfin Media Server
+          workgroup = WORKGROUP
+          
+          # Enable network browsing
+          local master = yes
+          domain master = yes
+          preferred master = yes
+          os level = 65
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - Mac Compatibility"
+      notify: restart samba
 
-    - name: Start and enable Docker
+    - name: Configure Samba share for media folder
+      blockinfile:
+        path: /etc/samba/smb.conf
+        block: |
+          [media]
+              comment = Jellyfin Media Share
+              path = /srv/media
+              browseable = yes
+              read only = no
+              guest ok = yes
+              create mask = 0664
+              directory mask = 0775
+              force user = nobody
+              force group = nogroup
+              # Mac-specific options
+              vfs objects = catia fruit streams_xattr
+              fruit:time machine = no
+              fruit:locking = netatalk
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - Media Share"
+      notify: restart samba
+
+    - name: Start and enable Samba service
       systemd:
-        name: docker
+        name: smbd
         state: started
         enabled: yes
 
-    - name: Create jellystat directory
+    - name: Start and enable Avahi daemon for network discovery
+      systemd:
+        name: avahi-daemon
+        state: started
+        enabled: yes
+
+    - name: Install Certbot for Let's Encrypt SSL
+      snap:
+        name: certbot
+        classic: yes
+
+    - name: Create certbot symlink
       file:
-        path: /opt/jellystat
-        state: directory
-        mode: '0755'
-
-    - name: Create Jellystat docker-compose.yml
-      template:
-        content: |
-          version: '3.8'
-          services:
-            jellystat-db:
-              image: postgres:15.2
-              container_name: jellystat-db
-              environment:
-                POSTGRES_DB: 'jfstat'
-                POSTGRES_USER: 'postgres'
-                POSTGRES_PASSWORD: '{{ jellystat_postgres_password }}'
-              volumes:
-                - ./postgres-data:/var/lib/postgresql/data
-              restart: unless-stopped
-            
-            jellystat:
-              image: cyfershepard/jellystat:latest
-              container_name: jellystat
-              environment:
-                POSTGRES_USER: 'postgres'
-                POSTGRES_PASSWORD: '{{ jellystat_postgres_password }}'
-                POSTGRES_IP: 'jellystat-db'
-                POSTGRES_PORT: '5432'
-                JWT_SECRET: '{{ jellystat_jwt_secret }}'
-              ports:
-                - "3000:3000"
-              volumes:
-                - ./backup-data:/app/backend/backup-data
-              depends_on:
-                - jellystat-db
-              restart: unless-stopped
-        dest: /opt/jellystat/docker-compose.yml
-        mode: '0644'
-
-    - name: Start Jellystat containers
-      community.docker.docker_compose_v2:
-        project_src: /opt/jellystat
-        state: present
-
-    - name: Set up firewall rule for Jellystat
-      ufw:
-        rule: allow
-        port: '3000'
-        proto: tcp
+        src: /snap/bin/certbot
+        dest: /usr/bin/certbot
+        state: link
 
   handlers:
     - name: restart jellyfin
       systemd:
         name: jellyfin
+        state: restarted
+
+    - name: restart samba
+      systemd:
+        name: smbd
         state: restarted
