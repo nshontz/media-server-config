@@ -24,6 +24,11 @@
       apt:
         update_cache: yes
 
+    - name: Add universe repository
+      apt_repository:
+        repo: "deb http://archive.ubuntu.com/ubuntu {{ ansible_distribution_release }} universe"
+        state: present
+
     - name: Install prerequisites
       apt:
         name:
@@ -39,6 +44,8 @@
           - samba
           - snapd
           - avahi-daemon
+          - exfat-fuse
+          - exfat-utils
         state: present
 
     - name: Create keyrings directory
@@ -145,6 +152,19 @@
     - name: Enable firewall
       ufw:
         state: enabled
+
+    - name: Create mount point for external drive
+      file:
+        path: /mnt/phat
+        state: directory
+        mode: '0755'
+
+    - name: Add fstab entry for external drive
+      lineinfile:
+        path: /etc/fstab
+        line: "UUID=BAEC-B479 /mnt/phat exfat defaults,nofail 0 0"
+        state: present
+        backup: yes
 
     - name: Create shared media directory
       file:
