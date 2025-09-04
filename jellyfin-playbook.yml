@@ -3,21 +3,8 @@
   hosts: jellyfin_servers
   become: yes
   vars:
-    jellyfin_plugins:
-      - name: "Session Cleaner"
-        repo_url: "https://github.com/jellyfin/jellyfin-plugin-sessioncleaner/releases/latest/download/Jellyfin.Plugin.SessionCleaner.dll"
-      - name: "SkinManager"
-        repo_url: "https://github.com/danieladov/jellyfin-plugin-skin-manager/releases/latest/download/SkinManager.dll"
-      - name: "Playback Reporting"
-        repo_url: "https://github.com/jellyfin/jellyfin-plugin-playbackreporting/releases/latest/download/Jellyfin.Plugin.PlaybackReporting.dll"
-      - name: "Subtitle Extract"
-        repo_url: "https://github.com/jellyfin/jellyfin-plugin-subtitleextract/releases/latest/download/Jellyfin.Plugin.SubtitleExtract.dll"
-      - name: "Intro Skipper"
-        repo_url: "https://github.com/ConfusedPolarBear/intro-skipper/releases/latest/download/Jellyfin.Plugin.IntroSkipper.dll"
-    
-    # Jellystat configuration
-#    jellystat_postgres_password: "{{ vault_postgres_password | default('changeme123') }}"
-#    jellystat_jwt_secret: "{{ vault_jwt_secret | default('changeme-jwt-secret-64-chars-long-for-security-purposes') }}"
+    jellyfin_domain: "{{ vault_jellyfin_domain | default('jelly.saltgrip.com') }}"
+    jellyfin_email: "{{ vault_jellyfin_email | default('nickshontz@gmail.com') }}"
 
   tasks:
     - name: Update apt cache
@@ -45,6 +32,9 @@
           - snapd
           - avahi-daemon
           - exfat-fuse
+          - debian-keyring
+          - debian-archive-keyring
+          - apt-transport-https
         state: present
 
     - name: Create keyrings directory
@@ -65,13 +55,29 @@
         filename: jellyfin
         state: present
 
-    - name: Update apt cache after adding repository
+    - name: Add Caddy GPG key
+      shell: curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+      args:
+        creates: /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+
+    - name: Add Caddy repository
+      apt_repository:
+        repo: "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main"
+        filename: caddy-stable
+        state: present
+
+    - name: Update apt cache after adding repositories
       apt:
         update_cache: yes
 
     - name: Install Jellyfin
       apt:
         name: jellyfin
+        state: present
+
+    - name: Install Caddy
+      apt:
+        name: caddy
         state: present
 
     - name: Enable Jellyfin service
@@ -99,7 +105,7 @@
         group: jellyfin
         mode: '0755'
 
-    - name: Configure encoding settings for Apple TV compatibility
+    - name: Configure Jellyfin for reverse proxy
       copy:
         content: |
           {
@@ -123,21 +129,40 @@
               "VppTonemappingAlgorithm": "bt2390",
               "H264PreferredFormat": "baseline",
               "TranscodingThreadCount": 0
+            },
+            "NetworkConfiguration": {
+              "RequireHttps": false,
+              "BaseUrl": "",
+              "PublicHttpsPort": 443,
+              "HttpServerPortNumber": 8096,
+              "HttpsPortNumber": 8920,
+              "EnableHttps": false,
+              "KnownProxies": ["127.0.0.1"],
+              "TrustAllIP6Interfaces": false,
+              "HDHomerunPortRange": "",
+              "PublishedServerUriBySubnet": [],
+              "AutoDiscoveryTracing": false,
+              "AutoDiscovery": true,
+              "RemoteIPFilter": [],
+              "IsRemoteIPFilterBlacklist": false
             }
           }
-        dest: /etc/jellyfin/encoding.xml
+        dest: /etc/jellyfin/system.xml
         owner: jellyfin
         group: jellyfin
         mode: '0644'
       notify: restart jellyfin
 
-    - name: Configure firewall for Jellyfin
+    - name: Configure firewall rules
       ufw:
         rule: allow
         port: "{{ item.port }}"
         proto: "{{ item.proto }}"
       loop:
         - { port: "22", proto: "tcp" }
+        - { port: "80", proto: "tcp" }
+        - { port: "443", proto: "tcp" }
+        - { port: "443", proto: "udp" }
         - { port: "8096", proto: "tcp" }
         - { port: "8920", proto: "tcp" }
         - { port: "1900", proto: "udp" }
@@ -169,9 +194,76 @@
       file:
         path: /srv/media
         state: directory
-        mode: '0755'
+        mode: '0777'
         owner: nobody
         group: nogroup
+
+#    - name: Create media folders in /mnt/phat
+#      file:
+#        path: "/mnt/phat/{{ item }}"
+#        state: directory
+#        mode: '0777'
+#        owner: nobody
+#        group: nogroup
+#      loop:
+#        - TV
+#        - Movies
+#        - Photos
+#        - Music
+#
+#    - name: Create media folders in /srv/media
+#      file:
+#        path: "/srv/media/{{ item }}"
+#        state: directory
+#        mode: '0777'
+#        owner: nobody
+#        group: nogroup
+#      loop:
+#        - TV
+#        - Movies
+#        - Photos
+#        - Music
+#
+#    - name: Create media sync script
+#      copy:
+#        content: |
+#          #!/bin/bash
+#
+#          # Media sync script - moves files from /mnt/phat to /srv/media
+#
+#          FOLDERS=("TV" "Movies" "Photos" "Music")
+#          SOURCE_BASE="/mnt/phat"
+#          DEST_BASE="/srv/media"
+#
+#          for folder in "${FOLDERS[@]}"; do
+#              SOURCE_DIR="$SOURCE_BASE/$folder"
+#              DEST_DIR="$DEST_BASE/$folder"
+#
+#              # Check if source directory exists and has content
+#              if [ -d "$SOURCE_DIR" ] && [ "$(ls -A "$SOURCE_DIR" 2>/dev/null)" ]; then
+#                  echo "Moving files from $SOURCE_DIR to $DEST_DIR"
+#
+#                  # Move all files and directories from source to destination
+#                  find "$SOURCE_DIR" -mindepth 1 -maxdepth 1 -exec mv {} "$DEST_DIR/" \;
+#
+#                  echo "Moved contents of $folder folder"
+#              else
+#                  echo "No files to move in $folder folder"
+#              fi
+#          done
+#
+#          echo "Media sync completed at $(date)"
+#        dest: /usr/local/bin/media-sync.sh
+#        mode: '0755'
+#        owner: root
+#        group: root
+#
+#    - name: Set up cron job for media sync
+#      cron:
+#        name: "Media sync from /mnt/phat to /srv/media"
+#        minute: "*/30"
+#        job: "/usr/local/bin/media-sync.sh >> /var/log/media-sync.log 2>&1"
+#        user: root
 
     - name: Configure Samba global settings for Mac compatibility
       blockinfile:
@@ -234,16 +326,25 @@
         state: started
         enabled: yes
 
-    - name: Install Certbot for Let's Encrypt SSL
-      snap:
-        name: certbot
-        classic: yes
+    - name: Create Caddyfile for Jellyfin reverse proxy
+      copy:
+        content: |
+          {{ jellyfin_domain }} {
+              reverse_proxy 127.0.0.1:8096
+          }
+        dest: /etc/caddy/Caddyfile
+        owner: root
+        group: root
+        mode: '0644'
+      notify: restart caddy
 
-    - name: Create certbot symlink
-      file:
-        src: /snap/bin/certbot
-        dest: /usr/bin/certbot
-        state: link
+    - name: Enable and start Caddy service
+      systemd:
+        name: caddy
+        state: started
+        enabled: yes
+        daemon_reload: yes
+
 
   handlers:
     - name: restart jellyfin
@@ -254,4 +355,9 @@
     - name: restart samba
       systemd:
         name: smbd
+        state: restarted
+
+    - name: restart caddy
+      systemd:
+        name: caddy
         state: restarted
