@@ -1,0 +1,33 @@
+{
+    "_comment1": "WARNING: This file is managed by Ansible.",
+    "_comment2": "DO NOT EDIT MANUALLY - Changes will be overwritten.",
+    "_comment3": "Edit the source file in the Ansible repository instead.",
+    "Serilog": {
+        "MinimumLevel": "Information",
+        "WriteTo": [
+            {
+                "Name": "Console",
+                "Args": {
+                    "outputTemplate": "[{Timestamp:HH:mm:ss}] [{Level:u3}] {Message:lj}{NewLine}{Exception}"
+                }
+            },
+            {
+                "Name": "Async",
+                "Args": {
+                    "configure": [
+                        {
+                            "Name": "File",
+                            "Args": {
+                                "path": "%JELLYFIN_LOG_DIR%//jellyfin.log",
+                                "fileSizeLimitBytes": 10485700,
+                                "rollOnFileSizeLimit": true,
+                                "retainedFileCountLimit": 10,
+                                "outputTemplate": "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz}] [{Level:u3}] {Message}{NewLine}{Exception}"
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+}

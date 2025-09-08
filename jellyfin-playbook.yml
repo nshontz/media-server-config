@@ -37,6 +37,31 @@
           - apt-transport-https
         state: present
 
+    - name: Configure network interface enp1s0 with static IP
+      copy:
+        content: |
+          # WARNING: This file is managed by Ansible.
+          # DO NOT EDIT MANUALLY - Changes will be overwritten.
+          # Edit the source file in the Ansible repository instead.
+          
+          network:
+            version: 2
+            ethernets:
+              enp1s0:
+                dhcp4: false
+                dhcp6: false
+                addresses:
+                  - 192.168.86.51/24
+                gateway4: 192.168.86.1
+                nameservers:
+                  addresses: [8.8.8.8, 8.8.4.4]
+                optional: false
+        dest: /etc/netplan/01-ethernet.yaml
+        owner: root
+        group: root
+        mode: '0644'
+      notify: apply netplan
+
     - name: Create keyrings directory
       file:
         path: /etc/apt/keyrings
@@ -70,9 +95,11 @@
       apt:
         update_cache: yes
 
-    - name: Install Jellyfin
+    - name: Install Jellyfin and web client
       apt:
-        name: jellyfin
+        name:
+          - jellyfin
+          - jellyfin-web
         state: present
 
     - name: Install Caddy
@@ -105,49 +132,10 @@
         group: jellyfin
         mode: '0755'
 
-    - name: Configure Jellyfin for reverse proxy
+    - name: Copy Jellyfin configuration files
       copy:
-        content: |
-          {
-            "EncodingOptions": {
-              "HardwareAccelerationType": "vaapi",
-              "EnableHardwareEncoding": true,
-              "EnableHardwareDecoding": true,
-              "EnableDecodingColorDepth10Hevc": true,
-              "EnableDecodingColorDepth10Vp9": true,
-              "PreferSystemNativeHwDecoder": true,
-              "EnableIntelLowPowerH264HwEncoder": true,
-              "EnableIntelLowPowerHevcHwEncoder": true,
-              "H264Crf": 23,
-              "H265Crf": 28,
-              "DeinterlaceDoubleRate": false,
-              "DeinterlaceMethod": "yadif",
-              "EnableTonemapping": true,
-              "TonemappingAlgorithm": "hable",
-              "TonemappingMode": "auto",
-              "TonemappingRange": "auto",
-              "VppTonemappingAlgorithm": "bt2390",
-              "H264PreferredFormat": "baseline",
-              "TranscodingThreadCount": 0
-            },
-            "NetworkConfiguration": {
-              "RequireHttps": false,
-              "BaseUrl": "",
-              "PublicHttpsPort": 443,
-              "HttpServerPortNumber": 8096,
-              "HttpsPortNumber": 8920,
-              "EnableHttps": false,
-              "KnownProxies": ["127.0.0.1"],
-              "TrustAllIP6Interfaces": false,
-              "HDHomerunPortRange": "",
-              "PublishedServerUriBySubnet": [],
-              "AutoDiscoveryTracing": false,
-              "AutoDiscovery": true,
-              "RemoteIPFilter": [],
-              "IsRemoteIPFilterBlacklist": false
-            }
-          }
-        dest: /etc/jellyfin/system.xml
+        src: files/etc/jellyfin/
+        dest: /etc/jellyfin/
         owner: jellyfin
         group: jellyfin
         mode: '0644'
@@ -329,6 +317,10 @@
     - name: Create Caddyfile for Jellyfin reverse proxy
       copy:
         content: |
+          # WARNING: This file is managed by Ansible.
+          # DO NOT EDIT MANUALLY - Changes will be overwritten.
+          # Edit the source file in the Ansible repository instead.
+          
           {{ jellyfin_domain }} {
               reverse_proxy 127.0.0.1:8096
           }
@@ -347,6 +339,9 @@
 
 
   handlers:
+    - name: apply netplan
+      command: netplan apply
+
     - name: restart jellyfin
       systemd:
         name: jellyfin

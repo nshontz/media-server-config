@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  WARNING: This file is managed by Ansible.
+  DO NOT EDIT MANUALLY - Changes will be overwritten.
+  Edit the source file in the Ansible repository instead.
+-->
+<MetadataConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <UseFileCreationTimeForDateAdded>true</UseFileCreationTimeForDateAdded>
+</MetadataConfiguration>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  WARNING: This file is managed by Ansible.
+  DO NOT EDIT MANUALLY - Changes will be overwritten.
+  Edit the source file in the Ansible repository instead.
+-->
+<ServerConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <RequireHttps>false</RequireHttps>
+  <BaseUrl />
+  <PublicHttpsPort>443</PublicHttpsPort>
+  <HttpServerPortNumber>8096</HttpServerPortNumber>
+  <HttpsPortNumber>8920</HttpsPortNumber>
+  <EnableHttps>false</EnableHttps>
+  <HostWebClient>false</HostWebClient>
+  <KnownProxies>
+    <string>127.0.0.1</string>
+  </KnownProxies>
+  <TrustAllIP6Interfaces>false</TrustAllIP6Interfaces>
+  <HDHomerunPortRange />
+  <AutoDiscoveryTracing>false</AutoDiscoveryTracing>
+  <AutoDiscovery>true</AutoDiscovery>
+  <IsRemoteIPFilterBlacklist>false</IsRemoteIPFilterBlacklist>
+</ServerConfiguration>
