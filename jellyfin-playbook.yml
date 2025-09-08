@@ -174,7 +174,7 @@
     - name: Add fstab entry for external drive
       lineinfile:
         path: /etc/fstab
-        line: "UUID=BAEC-B479 /mnt/phat exfat defaults,nofail 0 0"
+        line: "UUID=BAEC-B479 /mnt/phat exfat umask=000,uid=1000,gid=1000,nofail 0 0"
         state: present
         backup: yes
 
@@ -285,7 +285,7 @@
       blockinfile:
         path: /etc/samba/smb.conf
         block: |
-          [media]
+          [internal]
               comment = Jellyfin Media Share
               path = /srv/media
               browseable = yes
@@ -300,6 +300,27 @@
               fruit:time machine = no
               fruit:locking = netatalk
         marker: "# {mark} ANSIBLE MANAGED BLOCK - Media Share"
+      notify: restart samba
+
+    - name: Configure Samba share for movies folder
+      blockinfile:
+        path: /etc/samba/smb.conf
+        block: |
+          [slimdrive]
+              comment = Movies Share
+              path = /mnt/phat/movies
+              browseable = yes
+              read only = no
+              guest ok = yes
+              create mask = 0664
+              directory mask = 0775
+              force user = nobody
+              force group = nogroup
+              # Mac-specific options
+              vfs objects = catia fruit streams_xattr
+              fruit:time machine = no
+              fruit:locking = netatalk
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - Movies Share"
       notify: restart samba
 
     - name: Start and enable Samba service
