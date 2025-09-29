@@ -51,8 +51,8 @@
                 dhcp4: false
                 dhcp6: false
                 addresses:
-                  - 192.168.86.51/24
-                gateway4: 192.168.86.1
+                  - 192.168.68.94/24
+                gateway4: 192.168.68.1
                 nameservers:
                   addresses: [8.8.8.8, 8.8.4.4]
                 optional: false
@@ -124,6 +124,11 @@
         host: localhost
         timeout: 120
 
+    - name: Check if Jellyfin configuration directory exists
+      stat:
+        path: /etc/jellyfin
+      register: jellyfin_config_dir
+
     - name: Create Jellyfin configuration directory
       file:
         path: /etc/jellyfin
@@ -131,15 +136,17 @@
         owner: jellyfin
         group: jellyfin
         mode: '0755'
+      when: not jellyfin_config_dir.stat.exists
 
-    - name: Copy Jellyfin configuration files
-      copy:
-        src: files/etc/jellyfin/
-        dest: /etc/jellyfin/
-        owner: jellyfin
-        group: jellyfin
-        mode: '0644'
-      notify: restart jellyfin
+#    - name: Copy Jellyfin configuration files # these files are edited by Jellyfin, we shouldn't meddle
+#      copy:
+#        src: files/etc/jellyfin/
+#        dest: /etc/jellyfin/
+#        owner: jellyfin
+#        group: jellyfin
+#        mode: '0644'
+#      notify: restart jellyfin
+#      when: not jellyfin_config_dir.stat.exists
 
     - name: Configure firewall rules
       ufw:
@@ -185,73 +192,6 @@
         mode: '0777'
         owner: nobody
         group: nogroup
-
-#    - name: Create media folders in /mnt/phat
-#      file:
-#        path: "/mnt/phat/{{ item }}"
-#        state: directory
-#        mode: '0777'
-#        owner: nobody
-#        group: nogroup
-#      loop:
-#        - TV
-#        - Movies
-#        - Photos
-#        - Music
-#
-#    - name: Create media folders in /srv/media
-#      file:
-#        path: "/srv/media/{{ item }}"
-#        state: directory
-#        mode: '0777'
-#        owner: nobody
-#        group: nogroup
-#      loop:
-#        - TV
-#        - Movies
-#        - Photos
-#        - Music
-#
-#    - name: Create media sync script
-#      copy:
-#        content: |
-#          #!/bin/bash
-#
-#          # Media sync script - moves files from /mnt/phat to /srv/media
-#
-#          FOLDERS=("TV" "Movies" "Photos" "Music")
-#          SOURCE_BASE="/mnt/phat"
-#          DEST_BASE="/srv/media"
-#
-#          for folder in "${FOLDERS[@]}"; do
-#              SOURCE_DIR="$SOURCE_BASE/$folder"
-#              DEST_DIR="$DEST_BASE/$folder"
-#
-#              # Check if source directory exists and has content
-#              if [ -d "$SOURCE_DIR" ] && [ "$(ls -A "$SOURCE_DIR" 2>/dev/null)" ]; then
-#                  echo "Moving files from $SOURCE_DIR to $DEST_DIR"
-#
-#                  # Move all files and directories from source to destination
-#                  find "$SOURCE_DIR" -mindepth 1 -maxdepth 1 -exec mv {} "$DEST_DIR/" \;
-#
-#                  echo "Moved contents of $folder folder"
-#              else
-#                  echo "No files to move in $folder folder"
-#              fi
-#          done
-#
-#          echo "Media sync completed at $(date)"
-#        dest: /usr/local/bin/media-sync.sh
-#        mode: '0755'
-#        owner: root
-#        group: root
-#
-#    - name: Set up cron job for media sync
-#      cron:
-#        name: "Media sync from /mnt/phat to /srv/media"
-#        minute: "*/30"
-#        job: "/usr/local/bin/media-sync.sh >> /var/log/media-sync.log 2>&1"
-#        user: root
 
     - name: Configure Samba global settings for Mac compatibility
       blockinfile:
@@ -357,6 +297,20 @@
         state: started
         enabled: yes
         daemon_reload: yes
+
+    - name: Create Jellyfin backup directory
+      file:
+        path: /mnt/media-server/jellyfin-backup
+        state: directory
+        mode: '0755'
+
+    - name: Create daily Jellyfin configuration backup cron job
+      cron:
+        name: "Backup Jellyfin configuration"
+        minute: "0"
+        hour: "2"
+        job: "rsync -av --delete /etc/jellyfin/ /mnt/media-server/jellyfin-backup/"
+        user: root
 
 
   handlers:
