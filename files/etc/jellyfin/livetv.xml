@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LiveTvOptions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <GuideDays xsi:nil="true" />
+  <EnableRecordingSubfolders>false</EnableRecordingSubfolders>
+  <EnableOriginalAudioWithEncodedRecordings>false</EnableOriginalAudioWithEncodedRecordings>
+  <TunerHosts>
+    <TunerHostInfo>
+      <Id>d505e72740854105b7f77cdb787d574c</Id>
+      <Url>https://iptv-org.github.io/iptv/index.m3u</Url>
+      <Type>m3u</Type>
+      <ImportFavoritesOnly>false</ImportFavoritesOnly>
+      <AllowHWTranscoding>false</AllowHWTranscoding>
+      <AllowFmp4TranscodingContainer>false</AllowFmp4TranscodingContainer>
+      <AllowStreamSharing>true</AllowStreamSharing>
+      <FallbackMaxStreamingBitrate>30000000</FallbackMaxStreamingBitrate>
+      <EnableStreamLooping>false</EnableStreamLooping>
+      <TunerCount>0</TunerCount>
+      <IgnoreDts>true</IgnoreDts>
+    </TunerHostInfo>
+    <TunerHostInfo>
+      <Id>c82e5b9764d9420885e8271e0c5d5f6b</Id>
+      <Url>https://iptv-org.github.io/iptv/categories/weather.m3u</Url>
+      <Type>m3u</Type>
+      <ImportFavoritesOnly>false</ImportFavoritesOnly>
+      <AllowHWTranscoding>false</AllowHWTranscoding>
+      <AllowFmp4TranscodingContainer>false</AllowFmp4TranscodingContainer>
+      <AllowStreamSharing>true</AllowStreamSharing>
+      <FallbackMaxStreamingBitrate>30000000</FallbackMaxStreamingBitrate>
+      <EnableStreamLooping>false</EnableStreamLooping>
+      <TunerCount>0</TunerCount>
+      <IgnoreDts>true</IgnoreDts>
+    </TunerHostInfo>
+  </TunerHosts>
+  <ListingProviders />
+  <PrePaddingSeconds>0</PrePaddingSeconds>
+  <PostPaddingSeconds>0</PostPaddingSeconds>
+  <MediaLocationsCreated />
+  <RecordingPostProcessorArguments>"{path}"</RecordingPostProcessorArguments>
+  <SaveRecordingNFO>true</SaveRecordingNFO>
+  <SaveRecordingImages>true</SaveRecordingImages>
+</LiveTvOptions>
