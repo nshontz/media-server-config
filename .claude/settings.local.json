@@ -3,7 +3,19 @@
     "allow": [
       "Bash(sudo mkdir:*)",
       "Bash(mkdir:*)",
-      "WebFetch(domain:jellyfin.org)"
+      "WebFetch(domain:jellyfin.org)",
+      "Bash(ansible-playbook:*)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:iptv-org.github.io)",
+      "WebFetch(domain:iptv-org.github.io)",
+      "WebFetch(domain:iptv-org.github.io)",
+      "WebFetch(domain:iptv-org.github.io)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:www.tvpassport.com)",
+      "WebFetch(domain:schedulesdirect.org)",
+      "Bash(rm:*)"
     ],
     "deny": []
   }

@@ -35,6 +35,9 @@
           - debian-keyring
           - debian-archive-keyring
           - apt-transport-https
+          - nodejs
+          - npm
+          - git
         state: present
 
     - name: Configure network interface enp1s0 with static IP
@@ -193,6 +196,14 @@
         owner: nobody
         group: nogroup
 
+    - name: Create movies directory on external drive
+      file:
+        path: /mnt/phat/movies
+        state: directory
+        mode: '0777'
+        owner: nobody
+        group: nogroup
+
     - name: Configure Samba global settings for Mac compatibility
       blockinfile:
         path: /etc/samba/smb.conf
@@ -231,10 +242,14 @@
               browseable = yes
               read only = no
               guest ok = yes
-              create mask = 0664
-              directory mask = 0775
+              public = yes
+              writable = yes
+              create mask = 0666
+              directory mask = 0777
               force user = nobody
               force group = nogroup
+              wide links = yes
+              unix extensions = no
               # Mac-specific options
               vfs objects = catia fruit streams_xattr
               fruit:time machine = no
@@ -246,16 +261,20 @@
       blockinfile:
         path: /etc/samba/smb.conf
         block: |
-          [slimdrive]
+          [big-red]
               comment = Movies Share
-              path = /mnt/phat/movies
+              path = /mnt/media-library/
               browseable = yes
               read only = no
               guest ok = yes
-              create mask = 0664
-              directory mask = 0775
+              public = yes
+              writable = yes
+              create mask = 0666
+              directory mask = 0777
               force user = nobody
               force group = nogroup
+              wide links = yes
+              unix extensions = no
               # Mac-specific options
               vfs objects = catia fruit streams_xattr
               fruit:time machine = no
@@ -310,6 +329,113 @@
         minute: "0"
         hour: "2"
         job: "rsync -av --delete /etc/jellyfin/ /mnt/media-server/jellyfin-backup/"
+        user: root
+
+    - name: Create media-library directory structure
+      file:
+        path: /mnt/media-library/Unknown
+        state: directory
+        mode: '0755'
+        recurse: yes
+
+    - name: Create live TV directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+        owner: jellyfin
+        group: jellyfin
+      loop:
+        - /var/lib/jellyfin/livetv
+        - /var/lib/jellyfin/livetv/epg
+        - /opt/iptv-epg
+
+    - name: Add /opt/iptv-epg as git safe directory
+      command: git config --global --add safe.directory /opt/iptv-epg
+
+    - name: Clone iptv-org/epg repository
+      git:
+        repo: https://github.com/iptv-org/epg.git
+        dest: /opt/iptv-epg
+        update: yes
+        force: yes
+
+    - name: Install EPG dependencies
+      npm:
+        path: /opt/iptv-epg
+
+    - name: Download M3U playlist
+      get_url:
+        url: https://iptv-org.github.io/iptv/index.m3u
+        dest: /var/lib/jellyfin/livetv/channels_raw.m3u
+        mode: '0644'
+        owner: jellyfin
+        group: jellyfin
+
+#    - name: Filter out problematic channels from M3U playlist
+#      shell: |
+#        grep -v -E "(flix|BET|MTV|VH1|Comedy Central|Nickelodeon|Nick Jr|TeenNick|TV Land|Paramount|Pluto)" /var/lib/jellyfin/livetv/channels_raw.m3u > /var/lib/jellyfin/livetv/channels.m3u || true
+#        chown jellyfin:jellyfin /var/lib/jellyfin/livetv/channels.m3u
+
+    - name: Try downloading USA Local EPG data first
+      get_url:
+        url: https://raw.githubusercontent.com/usa-local-epg/usa-locals/main/usalocals.xml.gz
+        dest: /tmp/usalocals.xml.gz
+        mode: '0644'
+      ignore_errors: yes
+      register: usa_epg_download
+
+    - name: Extract USA Local EPG data if download succeeded
+      shell: gunzip -c /tmp/usalocals.xml.gz > /var/lib/jellyfin/livetv/epg/guide.xml
+      when: usa_epg_download is succeeded
+      ignore_errors: yes
+      register: usa_epg_extract
+
+    - name: Generate EPG using iptv-org/epg as fallback
+      shell: cd /opt/iptv-epg && npm run grab -- --site=ontvtonight.com
+      when: usa_epg_download is failed or usa_epg_extract is failed
+      ignore_errors: yes
+
+    - name: Copy generated EPG to Jellyfin directory (fallback)
+      copy:
+        src: /opt/iptv-epg/guide.xml
+        dest: /var/lib/jellyfin/livetv/epg/guide.xml
+        remote_src: yes
+        owner: jellyfin
+        group: jellyfin
+        mode: '0644'
+      when: usa_epg_download is failed or usa_epg_extract is failed
+      ignore_errors: yes
+
+    - name: Set EPG file ownership
+      file:
+        path: /var/lib/jellyfin/livetv/epg/guide.xml
+        owner: jellyfin
+        group: jellyfin
+        mode: '0644'
+
+    - name: Create daily media file move cron job
+      cron:
+        name: "Move media files to library"
+        minute: "0"
+        hour: "12"
+        job: "find /srv/media/ -mindepth 1 -maxdepth 1 -exec mv {} /mnt/media-library/Unknown/ \\;"
+        user: root
+
+    - name: Create daily EPG update cron job
+      cron:
+        name: "Update EPG data"
+        minute: "30"
+        hour: "6"
+        job: "(wget -O /tmp/usalocals.xml.gz https://raw.githubusercontent.com/usa-local-epg/usa-locals/main/usalocals.xml.gz && gunzip -c /tmp/usalocals.xml.gz > /var/lib/jellyfin/livetv/epg/guide.xml) || (cd /opt/iptv-epg && npm run grab -- --site=ontvtonight.com && cp guide.xml /var/lib/jellyfin/livetv/epg/guide.xml); chown jellyfin:jellyfin /var/lib/jellyfin/livetv/epg/guide.xml"
+        user: root
+
+    - name: Create daily M3U playlist update cron job
+      cron:
+        name: "Update M3U playlist"
+        minute: "15"
+        hour: "6"
+        job: "wget -O /var/lib/jellyfin/livetv/channels_raw.m3u https://iptv-org.github.io/iptv/index.m3u && grep -v -E '(flix|BET|MTV|VH1|Comedy Central|Nickelodeon|Nick Jr|TeenNick|TV Land|Paramount|Pluto)' /var/lib/jellyfin/livetv/channels_raw.m3u > /var/lib/jellyfin/livetv/channels.m3u && chown jellyfin:jellyfin /var/lib/jellyfin/livetv/channels.m3u"
         user: root
 
 
