@@ -2,6 +2,17 @@
 
 This Ansible playbook provisions a Jellyfin media server on Ubuntu 24.04 with essential plugins.
 
+## Hardware
+
+**Server Specifications:**
+- **Beelink Mini S12 Pro Mini PC**
+- Intel 12th Gen N100 (4C/4T, up to 3.4GHz)
+- 16GB DDR4 RAM
+- 500GB SSD
+- Dual HDMI 4K@60Hz support
+- WiFi 6, Bluetooth 5.2
+- Low power consumption, NAS capable
+
 ## Prerequisites
 
 1. Ubuntu 24.04 server with SSH access
@@ -10,12 +21,18 @@ This Ansible playbook provisions a Jellyfin media server on Ubuntu 24.04 with es
 
 ## Setup
 
-1. Edit `inventory.yml` and replace:
+1. Copy the example inventory file:
+   ```bash
+   cp inventory.yml.example inventory.yml
+   ```
+
+2. Edit `inventory.yml` and replace:
    - `YOUR_STATIC_IP_HERE` with your server's IP address
-   - `YOUR_USERNAME_HERE` with your server username (typically `ubuntu`)
+   - `YOUR_USERNAME_HERE` with your server username
+   - `YOUR_PASSWORD_HERE` with your sudo password
    - Update SSH key path if different from `~/.ssh/id_rsa`
 
-2. Test connectivity:
+3. Test connectivity:
    ```bash
    ansible all -m ping
    ```
@@ -64,8 +81,16 @@ ansible-playbook jellyfin-playbook.yml
 
 ## Security Notes
 
+**IMPORTANT: Before sharing or deploying:**
+
+- **Never commit `inventory.yml`** - It contains sensitive information
+- Use `inventory.yml.example` as a template and add `inventory.yml` to `.gitignore`
+- Consider using Ansible Vault for sensitive variables:
+  ```bash
+  ansible-vault encrypt inventory.yml
+  ```
 - Change the default passwords in the playbook variables:
   - `jellystat_postgres_password`
   - `jellystat_jwt_secret`
-- Consider using Ansible Vault for sensitive variables
 - The server will be accessible on ports 8096 (Jellyfin) and 3000 (Jellystat)
+- Regularly update system packages and Jellyfin for security patches

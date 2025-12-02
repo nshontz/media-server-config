@@ -1,0 +1,16 @@
+# Ansible inventory with sensitive data
+inventory.yml
+
+# Local configuration files
+*.local
+*.secret
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
